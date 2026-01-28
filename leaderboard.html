@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Parkour Run - Live Leaderboard</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Arial', sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        color: white;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 15px;
+        padding: 20px;
+        backdrop-filter: blur(10px);
+      }
+
+      h1 {
+        text-align: center;
+        margin-bottom: 10px;
+        font-size: 28px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+      }
+
+      .update-time {
+        text-align: center;
+        font-size: 12px;
+        opacity: 0.8;
+        margin-bottom: 20px;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        font-size: 18px;
+      }
+
+      .leaderboard {
+        list-style: none;
+      }
+
+      .entry {
+        background: rgba(255, 255, 255, 0.1);
+        margin: 10px 0;
+        padding: 15px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        transition: transform 0.2s;
+      }
+
+      .entry:hover {
+        transform: translateX(5px);
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .entry.top-1 {
+        background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%);
+        color: #000;
+        font-weight: bold;
+      }
+
+      .entry.top-2 {
+        background: linear-gradient(135deg, #c0c0c0 0%, #a8a8a8 100%);
+        color: #000;
+      }
+
+      .entry.top-3 {
+        background: linear-gradient(135deg, #cd7f32 0%, #b8733c 100%);
+        color: #000;
+      }
+
+      .rank {
+        font-size: 24px;
+        font-weight: bold;
+        min-width: 40px;
+        text-align: center;
+      }
+
+      .player-info {
+        flex: 1;
+      }
+
+      .player-name {
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+
+      .player-stats {
+        font-size: 14px;
+        opacity: 0.9;
+      }
+
+      .score {
+        font-size: 20px;
+        font-weight: bold;
+        min-width: 100px;
+        text-align: right;
+      }
+
+      .error {
+        text-align: center;
+        padding: 40px;
+        color: #ff6b6b;
+        font-size: 16px;
+      }
+
+      .refresh-btn {
+        display: block;
+        margin: 20px auto 0;
+        padding: 12px 30px;
+        background: rgba(255, 255, 255, 0.2);
+        border: 2px solid white;
+        color: white;
+        border-radius: 25px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.3s;
+      }
+
+      .refresh-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: scale(1.05);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🏆 Global Leaderboard</h1>
+      <div class="update-time" id="updateTime">Loading...</div>
+
+      <div id="leaderboard" class="loading">Loading leaderboard...</div>
+
+      <button class="refresh-btn" onclick="loadLeaderboard()">
+        🔄 Refresh
+      </button>
+    </div>
+
+    <script>
+      const FIREBASE_PROJECT_ID = 'endless-runner-backend'; // ← REPLACE THIS
+      const FIREBASE_API_KEY = 'AIzaSyArw93YgFBv17F4f3aGFNR49Ur3SMhF0aY'; // ← REPLACE THIS
+
+      const LEADERBOARD_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/leaderboard?key=${FIREBASE_API_KEY}`;
+
+      async function loadLeaderboard() {
+        const container = document.getElementById('leaderboard');
+        const updateTime = document.getElementById('updateTime');
+
+        container.innerHTML = '<div class="loading">Loading...</div>';
+
+        try {
+          const response = await fetch(LEADERBOARD_URL);
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (!data.documents || data.documents.length === 0) {
+            container.innerHTML =
+              '<div class="error">No entries yet. Be the first!</div>';
+            return;
+          }
+
+          // Parse and sort entries
+          const entries = data.documents.map((doc) => {
+            const fields = doc.fields;
+            return {
+              playerName: fields.player_name?.stringValue || 'Anonymous',
+              score: parseInt(fields.score?.integerValue || '0'),
+              distance: parseInt(fields.distance?.integerValue || '0'),
+            };
+          });
+
+          // Sort by score descending
+          entries.sort((a, b) => b.score - a.score);
+
+          // Take top 10
+          const top10 = entries.slice(0, 10);
+
+          // Build HTML
+          let html = '<ul class="leaderboard">';
+
+          top10.forEach((entry, index) => {
+            const rank = index + 1;
+            const topClass = rank <= 3 ? `top-${rank}` : '';
+
+            html += `
+                        <li class="entry ${topClass}">
+                            <div class="rank">#${rank}</div>
+                            <div class="player-info">
+                                <div class="player-name">${escapeHtml(entry.playerName)}</div>
+                                <div class="player-stats">${entry.distance}m traveled</div>
+                            </div>
+                            <div class="score">${entry.score.toLocaleString()}</div>
+                        </li>
+                    `;
+          });
+
+          html += '</ul>';
+
+          container.innerHTML = html;
+
+          // Update timestamp
+          const now = new Date();
+          updateTime.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+        } catch (error) {
+          console.error('Leaderboard error:', error);
+          container.innerHTML = `<div class="error">Failed to load leaderboard. ${error.message}</div>`;
+        }
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Auto-refresh every 30 seconds
+      loadLeaderboard();
+      setInterval(loadLeaderboard, 30000);
+    </script>
+  </body>
+</html>
