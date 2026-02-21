@@ -3,21 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Parkour Run - Live Leaderboard</title>
+    <title>Run Across - Live Leaderboard</title>
     <style>
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
-
       body {
         font-family: 'Arial', sans-serif;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
         padding: 20px;
         color: white;
       }
-
       .container {
         max-width: 600px;
         margin: 0 auto;
@@ -26,31 +25,32 @@
         padding: 20px;
         backdrop-filter: blur(10px);
       }
-
       h1 {
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 4px;
         font-size: 28px;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
       }
-
+      .subtitle {
+        text-align: center;
+        font-size: 13px;
+        opacity: 0.7;
+        margin-bottom: 6px;
+      }
       .update-time {
         text-align: center;
         font-size: 12px;
         opacity: 0.8;
         margin-bottom: 20px;
       }
-
       .loading {
         text-align: center;
         padding: 40px;
         font-size: 18px;
       }
-
       .leaderboard {
         list-style: none;
       }
-
       .entry {
         background: rgba(255, 255, 255, 0.1);
         margin: 10px 0;
@@ -61,64 +61,53 @@
         gap: 15px;
         transition: transform 0.2s;
       }
-
       .entry:hover {
         transform: translateX(5px);
         background: rgba(255, 255, 255, 0.15);
       }
-
       .entry.top-1 {
         background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%);
         color: #000;
         font-weight: bold;
       }
-
       .entry.top-2 {
         background: linear-gradient(135deg, #c0c0c0 0%, #a8a8a8 100%);
         color: #000;
       }
-
       .entry.top-3 {
         background: linear-gradient(135deg, #cd7f32 0%, #b8733c 100%);
         color: #000;
       }
-
       .rank {
         font-size: 24px;
         font-weight: bold;
         min-width: 40px;
         text-align: center;
       }
-
       .player-info {
         flex: 1;
       }
-
       .player-name {
         font-size: 18px;
         font-weight: bold;
         margin-bottom: 5px;
       }
-
       .player-stats {
         font-size: 14px;
         opacity: 0.9;
       }
-
       .score {
         font-size: 20px;
         font-weight: bold;
         min-width: 100px;
         text-align: right;
       }
-
       .error {
         text-align: center;
         padding: 40px;
         color: #ff6b6b;
         font-size: 16px;
       }
-
       .refresh-btn {
         display: block;
         margin: 20px auto 0;
@@ -131,30 +120,59 @@
         font-size: 14px;
         transition: all 0.3s;
       }
-
       .refresh-btn:hover {
         background: rgba(255, 255, 255, 0.3);
         transform: scale(1.05);
+      }
+      .empty {
+        text-align: center;
+        padding: 40px;
+        opacity: 0.7;
+        font-size: 16px;
       }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>🏆 Global Leaderboard</h1>
+      <div class="subtitle">Run Across</div>
       <div class="update-time" id="updateTime">Loading...</div>
-
       <div id="leaderboard" class="loading">Loading leaderboard...</div>
-
       <button class="refresh-btn" onclick="loadLeaderboard()">
         🔄 Refresh
       </button>
     </div>
 
     <script>
-      const FIREBASE_PROJECT_ID = 'endless-runner-backend'; // ← REPLACE THIS
-      const FIREBASE_API_KEY = 'AIzaSyArw93YgFBv17F4f3aGFNR49Ur3SMhF0aY'; // ← REPLACE THIS
+      // Defaults — overridden by remote config
+      let CONFIG = {
+        API_URL: 'https://gamebackend-eight.vercel.app/api',
+        API_KEY:
+          '0b94c7725e5d5627a17ce3c3f85f63a248c3451c3784a5acc55c6d25cd9b3c28',
+        GAME_SLUG: 'endless-runner',
+        LEADERBOARD_LIMIT: 100,
+        AUTO_REFRESH_INTERVAL: 30000,
+      };
 
-      const LEADERBOARD_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/leaderboard?key=${FIREBASE_API_KEY}`;
+      let refreshTimer = null;
+
+      async function loadRemoteConfig() {
+        try {
+          const res = await fetch(
+            `${CONFIG.API_URL}/config/${CONFIG.GAME_SLUG}`,
+            {
+              headers: { 'x-api-key': CONFIG.API_KEY },
+            },
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.success && data.data) {
+            CONFIG = { ...CONFIG, ...data.data };
+          }
+        } catch (e) {
+          console.warn('[Config] Using defaults:', e.message);
+        }
+      }
 
       async function loadLeaderboard() {
         const container = document.getElementById('leaderboard');
@@ -163,65 +181,61 @@
         container.innerHTML = '<div class="loading">Loading...</div>';
 
         try {
-          const response = await fetch(LEADERBOARD_URL);
+          const res = await fetch(
+            `${CONFIG.API_URL}/leaderboard/${CONFIG.GAME_SLUG}?limit=${CONFIG.LEADERBOARD_LIMIT}`,
+            {
+              headers: {
+                'x-api-key': CONFIG.API_KEY,
+                'Content-Type': 'application/json',
+              },
+            },
+          );
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || 'Request failed');
 
-          const data = await response.json();
+          const entries = data.data;
 
-          if (!data.documents || data.documents.length === 0) {
+          if (!entries || entries.length === 0) {
             container.innerHTML =
-              '<div class="error">No entries yet. Be the first!</div>';
+              '<div class="empty">No entries yet — be the first! 🏃</div>';
+            updateTime.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
             return;
           }
 
-          // Parse and sort entries
-          const entries = data.documents.map((doc) => {
-            const fields = doc.fields;
-            return {
-              playerName: fields.player_name?.stringValue || 'Anonymous',
-              score: parseInt(fields.score?.integerValue || '0'),
-              distance: parseInt(fields.distance?.integerValue || '0'),
-            };
-          });
-
-          // Sort by score descending
-          entries.sort((a, b) => b.score - a.score);
-
-          // Take top 10
-          const top10 = entries.slice(0, 10);
-
-          // Build HTML
           let html = '<ul class="leaderboard">';
-
-          top10.forEach((entry, index) => {
+          entries.forEach((entry, index) => {
             const rank = index + 1;
             const topClass = rank <= 3 ? `top-${rank}` : '';
+            const distance = entry.metadata?.distance ?? 0;
+            const rankIcon =
+              rank === 1
+                ? '🥇'
+                : rank === 2
+                  ? '🥈'
+                  : rank === 3
+                    ? '🥉'
+                    : `#${rank}`;
 
             html += `
-                        <li class="entry ${topClass}">
-                            <div class="rank">#${rank}</div>
-                            <div class="player-info">
-                                <div class="player-name">${escapeHtml(entry.playerName)}</div>
-                                <div class="player-stats">${entry.distance}m traveled</div>
-                            </div>
-                            <div class="score">${entry.score.toLocaleString()}</div>
-                        </li>
-                    `;
+              <li class="entry ${topClass}">
+                <div class="rank">${rankIcon}</div>
+                <div class="player-info">
+                  <div class="player-name">${escapeHtml(entry.playerName || 'Anonymous')}</div>
+                  <div class="player-stats">${distance.toLocaleString()}m traveled</div>
+                </div>
+                <div class="score">${(entry.score || 0).toLocaleString()}</div>
+              </li>`;
           });
-
           html += '</ul>';
 
           container.innerHTML = html;
-
-          // Update timestamp
-          const now = new Date();
-          updateTime.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+          updateTime.textContent = `Last updated: ${new Date().toLocaleTimeString()} · ${entries.length} players`;
         } catch (error) {
           console.error('Leaderboard error:', error);
-          container.innerHTML = `<div class="error">Failed to load leaderboard. ${error.message}</div>`;
+          container.innerHTML = `<div class="error">Failed to load leaderboard.<br><small>${escapeHtml(error.message)}</small></div>`;
+          updateTime.textContent = 'Failed to update';
         }
       }
 
@@ -231,9 +245,16 @@
         return div.innerHTML;
       }
 
-      // Auto-refresh every 30 seconds
-      loadLeaderboard();
-      setInterval(loadLeaderboard, 30000);
+      async function init() {
+        await loadRemoteConfig();
+        await loadLeaderboard();
+        refreshTimer = setInterval(
+          loadLeaderboard,
+          CONFIG.AUTO_REFRESH_INTERVAL,
+        );
+      }
+
+      init();
     </script>
   </body>
 </html>
